@@ -1,3 +1,6 @@
+client/node_modules/
+server/node_modules/
+
 # Node.js 相关
 node_modules/
 npm-debug.log*

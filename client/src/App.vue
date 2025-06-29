@@ -54,8 +54,31 @@ const calculateHashes = (chunks: Blob[]) => {
   })
 }
 
+// 提交校验
+const verify = () => {
+  return fetch('/upload/verify', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      fileHash: fileHash.value,
+      fileName: fileName.value,
+    }),
+  })
+    .then((res) => res.json())
+    .then((data) => {
+      console.log('验证响应:', data)
+      return data
+    })
+    .catch((error) => {
+      console.error('验证失败:', error)
+      return null
+    })
+}
+
 // 上传分片
-const uploadChunks = async (chunks: Blob[]) => {
+const uploadChunks = async (chunks: Blob[], existChunks: string[]) => {
   // 获得一个对象数组
   const data = chunks.map((chunk, index) => {
     return {
@@ -65,13 +88,16 @@ const uploadChunks = async (chunks: Blob[]) => {
     }
   })
   // 将对象数组转换为formData数组
-  const formDatas = data.map((item) => {
-    const formData = new FormData()
-    formData.append('fileHash', item.fileHash)
-    formData.append('chunkHahs', item.chunkHahs)
-    formData.append('chunk', item.chunk)
-    return formData
-  })
+  const formDatas = data
+    //过滤操作,过滤之前已经上传过的
+    .filter((item) => !existChunks.includes(item.chunkHahs))
+    .map((item) => {
+      const formData = new FormData()
+      formData.append('fileHash', item.fileHash)
+      formData.append('chunkHahs', item.chunkHahs)
+      formData.append('chunk', item.chunk)
+      return formData
+    })
 
   const max = 6
   let index = 0
@@ -128,8 +154,15 @@ const handleFileChange: UploadProps['onChange'] = async (
 
   fileHash.value = hash as string
   fileName.value = file.name
-  // 上传分片
-  uploadChunks(chunks)
+
+  const data = await verify()
+
+  if (data.data.shouldUpload) {
+    // 上传分片
+    uploadChunks(chunks, data.data.existChunks)
+  } else {
+    alert('文件已存在,直接成功了')
+  }
 }
 </script>
 

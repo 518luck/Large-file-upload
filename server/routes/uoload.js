@@ -59,20 +59,24 @@ router.post('/', (req, res) => {
   })
 })
 
+// 文件合并
 router.post('/merge', async (req, res) => {
   const { fileHash, fileName, size } = req.body
 
   const filePath = path.resolve(UPLOAD_DIR, fileHash + extractExt(fileName))
 
+  const chunkDir = path.resolve(UPLOAD_DIR, fileHash)
   if (fse.existsSync(filePath)) {
     res.json({
       ok: true,
       msg: '文件合并成功',
     })
+    if (fse.existsSync(chunkDir)) {
+      await fse.remove(chunkDir)
+    }
     return
   }
 
-  const chunkDir = path.resolve(UPLOAD_DIR, fileHash)
   if (!fse.existsSync(chunkDir)) {
     res.status(401).json({
       ok: false,
@@ -145,6 +149,40 @@ router.post('/merge', async (req, res) => {
     res.status(500).json({
       ok: false,
       msg: '文件合并失败',
+    })
+  }
+})
+
+// 秒传断点校验
+router.post('/verify', async (req, res) => {
+  const { fileHash, fileName } = req.body
+
+  console.log('验证文件:', fileHash, fileName)
+
+  const filePath = path.resolve(UPLOAD_DIR, fileHash + extractExt(fileName))
+  // 返回服务器已经上传成功的切片
+  const chunkDir = path.join(UPLOAD_DIR, fileHash)
+  let existChunks = []
+  if (fse.existsSync(chunkDir)) {
+    existChunks = await fse.readdir(chunkDir)
+  }
+
+  // 存在不需要再次上传
+  if (fse.existsSync(filePath)) {
+    res.status(200).json({
+      ok: true,
+      data: {
+        shouldUpload: false,
+      },
+    })
+  } else {
+    // 不存在需要上传
+    res.status(200).json({
+      ok: true,
+      data: {
+        shouldUpload: true,
+        existChunks: existChunks,
+      },
     })
   }
 })

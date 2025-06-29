@@ -6,6 +6,8 @@ import SparkMd5 from 'spark-md5'
 const CHUNK_SIZE = 1024 * 1024
 
 const fileList = ref<UploadUserFile[]>([])
+const fileHash = ref<string>('')
+const fileName = ref<string>('')
 
 // 文件分片
 const createChunks = (file: File) => {
@@ -24,42 +26,94 @@ const createChunks = (file: File) => {
 
 // 计算哈希值
 const calculateHashes = (chunks: Blob[]) => {
-  // 计算策略,第一个最后一个切片参与计算,中间只计算前2个中间2个后面2个字节
-  const targets: Blob[] = [] // 用来存储参与计算的切片
-  const spark = new SparkMd5.ArrayBuffer()
-  const fileReader = new FileReader()
+  return new Promise((resolve) => {
+    // 计算策略,第一个最后一个切片参与计算,中间只计算前2个中间2个后面2个字节
+    const targets: Blob[] = [] // 用来存储参与计算的切片
+    const spark = new SparkMd5.ArrayBuffer()
+    const fileReader = new FileReader()
 
-  chunks.forEach((chunk, index) => {
-    if (index === 0 || index === chunks.length - 1) {
-      // 第一个最后一个切片参与计算
-      targets.push(chunk)
-    } else {
-      // 中间只计算前2个中间2个后面2个字节
-      targets.push(chunk.slice(0, 2))
-      targets.push(chunk.slice(CHUNK_SIZE / 2, CHUNK_SIZE / 2 + 2))
-      targets.push(chunk.slice(CHUNK_SIZE - 2, CHUNK_SIZE))
+    chunks.forEach((chunk, index) => {
+      if (index === 0 || index === chunks.length - 1) {
+        // 第一个最后一个切片参与计算
+        targets.push(chunk)
+      } else {
+        // 中间只计算前2个中间2个后面2个字节
+        targets.push(chunk.slice(0, 2))
+        targets.push(chunk.slice(CHUNK_SIZE / 2, CHUNK_SIZE / 2 + 2))
+        targets.push(chunk.slice(CHUNK_SIZE - 2, CHUNK_SIZE))
+      }
+      return targets
+    })
+
+    fileReader.readAsArrayBuffer(new Blob(targets))
+    fileReader.onload = (e) => {
+      if (!e.target) return
+      spark.append((e.target as FileReader).result as ArrayBuffer)
+      resolve(spark.end())
     }
-    return targets
   })
-
-  fileReader.readAsArrayBuffer(new Blob(targets))
-  fileReader.onload = (e) => {
-    if (!e.target) return
-    spark.append((e.target as FileReader).result as ArrayBuffer)
-    console.log('hash' + spark.end())
-  }
 }
 
-const handleFileChange: UploadProps['onChange'] = (uploadFile, uploadFiles) => {
+// 上传分片
+const uploadChunks = async (chunks: Blob[]) => {
+  // 获得一个对象数组
+  const data = chunks.map((chunk, index) => {
+    return {
+      fileHash: fileHash.value,
+      chunkHahs: fileHash.value + '-' + index,
+      chunk: chunk,
+    }
+  })
+  // 将对象数组转换为formData数组
+  const formDatas = data.map((item) => {
+    const formData = new FormData()
+    formData.append('fileHash', item.fileHash)
+    formData.append('chunkHahs', item.chunkHahs)
+    formData.append('chunk', item.chunk)
+    return formData
+  })
+
+  const max = 6
+  let index = 0
+  const taskPool = [] //请求池
+
+  while (index < formDatas.length) {
+    const task = fetch('/upload', {
+      method: 'POST',
+      body: formDatas[index],
+    })
+
+    taskPool.splice(
+      taskPool.findIndex((item) => item === task),
+      1
+    )
+    taskPool.push(task)
+    if (taskPool.length === max) {
+      await Promise.race(taskPool)
+    }
+    index++
+  }
+
+  await Promise.all(taskPool)
+}
+
+const handleFileChange: UploadProps['onChange'] = async (
+  uploadFile,
+  uploadFiles
+) => {
   const file = uploadFile.raw
 
   if (!file) return
-
   // 文件分片
   const chunks = createChunks(file)
-  console.log(chunks)
+  // 计算哈希值
+  const hash = await calculateHashes(chunks)
 
-  calculateHashes(chunks)
+  fileHash.value = hash as string
+  fileName.value = file.name
+  // 上传分片
+  const data = uploadChunks(chunks)
+  console.log(data)
 }
 </script>
 

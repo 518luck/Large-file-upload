@@ -95,6 +95,23 @@ const uploadChunks = async (chunks: Blob[]) => {
   }
 
   await Promise.all(taskPool)
+
+  // 通知服务合并文件
+  // mergeRequest()
+  fetch('/upload/merge', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      fileHash: fileHash.value,
+      fileName: fileName.value,
+      size: CHUNK_SIZE,
+    }),
+  }).then((res) => {
+    alert('合并成功')
+    console.log(res)
+  })
 }
 
 const handleFileChange: UploadProps['onChange'] = async (
@@ -112,8 +129,7 @@ const handleFileChange: UploadProps['onChange'] = async (
   fileHash.value = hash as string
   fileName.value = file.name
   // 上传分片
-  const data = uploadChunks(chunks)
-  console.log(data)
+  uploadChunks(chunks)
 }
 </script>
 

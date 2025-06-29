@@ -25,9 +25,6 @@ router.post('/', (req, res) => {
       return
     }
 
-    console.log('接收到的字段:', fields)
-    console.log('接收到的文件:', files)
-
     const fileHash = fields.fileHash[0]
     const chunkHahs = fields.chunkHahs[0]
     const chunk = files.chunk[0]
@@ -64,7 +61,6 @@ router.post('/', (req, res) => {
 
 router.post('/merge', async (req, res) => {
   const { fileHash, fileName, size } = req.body
-  console.log(fileHash, fileName, size)
 
   const filePath = path.resolve(UPLOAD_DIR, fileHash + extractExt(fileName))
 
@@ -121,8 +117,24 @@ router.post('/merge', async (req, res) => {
       })
     )
 
+    // 等待一小段时间确保所有文件句柄都释放
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
     // 删除分片目录
-    await fse.remove(chunkDir)
+    try {
+      await fse.remove(chunkDir)
+      console.log('分片目录删除成功:', chunkDir)
+    } catch (err) {
+      console.log('删除分片目录失败:', err.message)
+      // 尝试强制删除
+      try {
+        await fse.emptyDir(chunkDir)
+        await fse.rmdir(chunkDir)
+        console.log('强制删除分片目录成功')
+      } catch (forceErr) {
+        console.log('强制删除分片目录也失败:', forceErr.message)
+      }
+    }
 
     res.json({
       ok: true,
